@@ -1,71 +1,79 @@
-name: pytorch
-on:
-  push:
-    paths:
-      - pytorch/**
-      - .github/workflows/pytorch.yml
-  pull_request:
-    paths:
-      - pytorch/**
-      - .github/workflows/pytorch.yml
-  workflow_dispatch:
 env:
+  CI_DEPLOY_MODULE: ${{ github.workflow }}
   CI_DEPLOY_NEED_CACHE: 1
   CI_DEPLOY_NEED_CUDA: 1
-  CI_DEPLOY_MODULE: ${{ github.workflow }}
+  CI_DEPLOY_PASSWORD: ${{ secrets.CI_DEPLOY_PASSWORD }}
   CI_DEPLOY_PLATFORM: ${{ github.job }}
   CI_DEPLOY_SETTINGS: ${{ secrets.CI_DEPLOY_SETTINGS }}
   CI_DEPLOY_USERNAME: ${{ secrets.CI_DEPLOY_USERNAME }}
-  CI_DEPLOY_PASSWORD: ${{ secrets.CI_DEPLOY_PASSWORD }}
   STAGING_REPOSITORY: ${{ secrets.STAGING_REPOSITORY }}
 jobs:
   linux-x86_64:
-    runs-on: ubuntu-20.04
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: bytedeco/cache@always
+      with:
+        key: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@${{ github.run_id
+          }}-${{ github.run_attempt }}
+        path: /home/runner/.ccache
+        restore-keys: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@
+    - continue-on-error: true
+      timeout-minutes: 350
+      uses: bytedeco/javacpp-presets/.github/actions/deploy-ubuntu@actions
     strategy:
       matrix:
-        ext: ["", -gpu]
-    steps:
-      - uses: bytedeco/cache@always
-        with:
-          key: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@
-          path: /home/runner/.ccache
-      - uses: bytedeco/javacpp-presets/.github/actions/deploy-ubuntu@actions
-        timeout-minutes: 350
+        ext:
+        - ''
+        - -gpu
   macosx-arm64:
-    runs-on: macos-12
+    runs-on: self-hosted
     steps:
-      - uses: bytedeco/javacpp-presets/.github/actions/deploy-macosx@actions
+    - continue-on-error: true
+      uses: bytedeco/javacpp-presets/.github/actions/deploy-macosx@actions
   macosx-x86_64:
-    runs-on: macos-12
-#    strategy:
-#      matrix:
-#        ext: ["", -gpu]
+    runs-on: self-hosted
     steps:
-      - uses: bytedeco/javacpp-presets/.github/actions/deploy-macosx@actions
+    - continue-on-error: true
+      uses: bytedeco/javacpp-presets/.github/actions/deploy-macosx@actions
+  redeploy:
+    needs:
+    - linux-x86_64
+    - macosx-arm64
+    - macosx-x86_64
+    - windows-x86_64
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: bytedeco/javacpp-presets/.github/actions/redeploy@actions
   windows-x86_64:
-    runs-on: windows-2019
+    env:
+      BUILD_DIR: C:\build
+      CI_DEPLOY_OPTIONS: -Djavacpp.parser.skip -Dmaven.javadoc.skip
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: al-cheb/configure-pagefile-action@v1.3
+      with:
+        disk-root: 'C:'
+        maximum-size: 32GB
+        minimum-size: 16GB
+    - continue-on-error: true
+      uses: bytedeco/cache@always
+      with:
+        key: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@${{ github.run_id
+          }}-${{ github.run_attempt }}
+        path: ~/ccache/?
+        restore-keys: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@
+    - continue-on-error: true
+      timeout-minutes: 350
+      uses: bytedeco/javacpp-presets/.github/actions/deploy-windows@actions
     strategy:
       matrix:
-        ext: ["", -gpu]
-    env:
-        BUILD_DIR: C:\build
-        CI_DEPLOY_OPTIONS: -Djavacpp.parser.skip -Dmaven.javadoc.skip
-    steps:
-      - uses: al-cheb/configure-pagefile-action@v1.3
-        with:
-          minimum-size: 16GB
-          maximum-size: 32GB
-          disk-root: "C:"
-      - uses: bytedeco/cache@always
-        with:
-          key: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: ${{ github.workflow }}-${{ github.job }}${{ matrix.ext }}@
-          path: ~/ccache/?
-      - uses: bytedeco/javacpp-presets/.github/actions/deploy-windows@actions
-        timeout-minutes: 350
-  redeploy:
-    needs: [linux-x86_64, macosx-arm64, macosx-x86_64, windows-x86_64]
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: bytedeco/javacpp-presets/.github/actions/redeploy@actions
+        ext:
+        - ''
+        - -gpu
+name: pytorch
+on:
+  repository_dispatch:
+    types: trigger-ga___pytorch.yml
